@@ -3,18 +3,20 @@ package main
 import (
 	"io/ioutil"
 
+	"github.com/lazyjin/logrus-redis-cluster-hook"
 	"github.com/sirupsen/logrus"
-	"github.com/rogierlommers/logrus-redis-hook"
 )
 
 func init() {
 	hookConfig := logredis.HookConfig{
-		Host:     "localhost",
+		Addrs:      []string{"localhost:6379"},
+		ConnOption: logredis.SINGLE,
+		// Addrs:      []string{"127.0.0.1:7000", "127.0.0.1:7001", "127.0.0.1:7002"},
+		// ConnOption: logredis.CLUSTER,
 		Key:      "my_redis_key",
 		Format:   "v0",
 		App:      "my_app_name",
 		Hostname: "my_app_hostmame",
-		Port:     6379,
 		DB:       0,
 	}
 
