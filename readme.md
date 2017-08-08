@@ -1,17 +1,19 @@
-# Redis Hook for [Logrus](https://github.com/Sirupsen/logrus) <img src="http://i.imgur.com/hTeVwmJ.png" width="40" height="40" alt=":walrus:" class="emoji" title=":walrus:"/>
-[![Build Status](https://travis-ci.org/rogierlommers/logrus-redis-hook.svg?branch=master)](https://travis-ci.org/rogierlommers/logrus-redis-hook)
+# Redis Cluster Hook for [Logrus](https://github.com/Sirupsen/logrus)
+[![Build Status](https://travis-ci.org/lazyjin/logrus-redis-cluster-hook.svg?branch=master)](https://travis-ci.org/lazyjin/logrus-redis-cluster-hook)
 
-## Why?
+logrus-redis-cluster-hook is a redis hook for [Logrus](https://github.com/Sirupsen/logrus), based on [logrus-redis-cluster]( https://github.com/rogierlommers/logrus-redis-hook). 
 
-Useful for centralized logging, using a RELK stack (Redis, Elasticsearch, Logstash and Kibana). When the hook is installed, all log messages are sent to a Redis server, in Logstash message V0 or V1 format, ready to be parsed/processed by Logstash.
+[go-redis](https://github.com/go-redis/redis) is used for redis connection, And both single connection and cluster connection are supported.
+
+
 
 ## Install
 
 ```shell
-$ go get github.com/rogierlommers/logrus-redis-hook
+$ go get github.com/lazyjin/logrus-redis-cluster-hook
 ```
 
-![Colored](http://i.imgur.com/3sWfI4s.jpg)
+
 
 ## Usage
 
@@ -21,19 +23,21 @@ package main
 import (
 	"io/ioutil"
 
-	"github.com/Sirupsen/logrus"
-	"github.com/rogierlommers/logrus-redis-hook"
+	"github.com/sirupsen/logrus"
+	"github.com/lazyjin/logrus-redis-cluster-hook"
 )
 
 func init() {
 	hookConfig := logredis.HookConfig{
-		Host:   "localhost",
-		Key:    "my_redis_key",
-		Format: "v0",
-		App:    "my_app_name",
-		Port:   6379,
-		Hostname: "my_app_hostmame", // will be sent to field @source_host
-		DB:     0, // optional
+		Addrs:      []string{"localhost:6379"},
+		ConnOption: logredis.SINGLE,
+		// Addrs:      []string{"127.0.0.1:7000", "127.0.0.1:7001", "127.0.0.1:7002"},
+		// ConnOption: logredis.CLUSTER,
+		Key:      "my_redis_key",
+		Format:   "v0",
+		App:      "my_app_name",
+		Hostname: "my_app_hostmame",
+		DB:       0,
 	}
 
 	hook, err := logredis.NewHook(hookConfig)
@@ -60,10 +64,3 @@ func main() {
 	logrus.Info("This will only be sent to Redis")
 }
 ```
-
-
-## Testing
-Please see the `docker-compose` directory for information about how to test. There is a readme inside.
-
-## In case of hook: disable writing to stdout
-See this: https://github.com/Sirupsen/logrus/issues/328#issuecomment-210758435
