@@ -5,26 +5,32 @@ import (
 	"fmt"
 	"time"
 
+	"github.com/go-redis/redis"
 	"github.com/sirupsen/logrus"
-	"github.com/garyburd/redigo/redis"
+)
+
+const (
+	SINGLE int = iota
+	CLUSTER
 )
 
 // HookConfig stores configuration needed to setup the hook
 type HookConfig struct {
-	Key      string
-	Format   string
-	App      string
-	Host     string
-	Password string
-	Hostname string
-	Port     int
-	DB       int
+	Key        string
+	Format     string
+	App        string
+	Addrs      []string
+	Password   string
+	Hostname   string
+	ConnOption int
+	DB         int
 }
 
 // RedisHook to sends logs to Redis server
 type RedisHook struct {
-	RedisPool      *redis.Pool
-	RedisHost      string
+	RedisCluster   *redis.ClusterClient
+	RedisClient    *redis.Client
+	RedisAddrs     []string
 	RedisKey       string
 	LogstashFormat string
 	AppName        string
@@ -34,29 +40,65 @@ type RedisHook struct {
 
 // NewHook creates a hook to be added to an instance of logger
 func NewHook(config HookConfig) (*RedisHook, error) {
-	pool := newRedisConnectionPool(config.Host, config.Password, config.Port, config.DB)
+	var hook = &RedisHook{
+		RedisAddrs: config.Addrs,
+		RedisKey:   config.Key,
+		AppName:    config.App,
+		Hostname:   config.Hostname,
+	}
+
+	var err error
+
+	if config.ConnOption == SINGLE {
+		hook.RedisClient, err = newSingleConnHook(&config)
+	} else {
+		hook.RedisCluster, err = newClusterHook(&config)
+	}
+
+	if err != nil {
+		return nil, err
+	}
 
 	if config.Format != "v0" && config.Format != "v1" {
 		return nil, fmt.Errorf("unknown message format")
+	} else {
+		hook.LogstashFormat = config.Format
 	}
-	// test if connection with REDIS can be established
-	conn := pool.Get()
-	defer conn.Close()
 
-	// check connection
-	_, err := conn.Do("PING")
+	return hook, nil
+}
+
+func newSingleConnHook(config *HookConfig) (*redis.Client, error) {
+	c := redis.NewClient(&redis.Options{
+		Addr:        config.Addrs[0],
+		Password:    config.Password,
+		DB:          config.DB,
+		PoolSize:    3,
+		IdleTimeout: 240 * time.Second,
+	})
+
+	_, err := c.Ping().Result()
 	if err != nil {
 		return nil, fmt.Errorf("unable to connect to REDIS: %s", err)
 	}
 
-	return &RedisHook{
-		RedisHost:      config.Host,
-		RedisPool:      pool,
-		RedisKey:       config.Key,
-		LogstashFormat: config.Format,
-		AppName:        config.App,
-		Hostname:       config.Host,
-	}, nil
+	return c, nil
+}
+
+func newClusterHook(config *HookConfig) (*redis.ClusterClient, error) {
+	cc := redis.NewClusterClient(&redis.ClusterOptions{
+		Addrs:       config.Addrs,
+		Password:    config.Password,
+		PoolSize:    3,
+		IdleTimeout: 240 * time.Second,
+	})
+
+	_, err := cc.Ping().Result()
+	if err != nil {
+		return nil, fmt.Errorf("unable to connect to REDIS Cluster: %s", err)
+	}
+
+	return cc, nil
 }
 
 // Fire is called when a log event is fired.
@@ -78,15 +120,25 @@ func (hook *RedisHook) Fire(entry *logrus.Entry) error {
 		return fmt.Errorf("error creating message for REDIS: %s", err)
 	}
 
-	// get connection from pool
-	conn := hook.RedisPool.Get()
-	defer conn.Close()
+	// get connection and send msg
+	if hook.RedisClient != nil {
+		c := hook.RedisClient
 
-	// send message
-	_, err = conn.Do("RPUSH", hook.RedisKey, js)
-	if err != nil {
-		return fmt.Errorf("error sending message to REDIS: %s", err)
+		// send message
+		_, err := c.LPush(hook.RedisKey, js).Result()
+		if err != nil {
+			return fmt.Errorf("error sending message to REDIS: %s", err)
+		}
+	} else {
+		cc := hook.RedisCluster
+
+		// send message
+		_, err := cc.LPush(hook.RedisKey, js).Result()
+		if err != nil {
+			return fmt.Errorf("error sending message to REDIS: %s", err)
+		}
 	}
+
 	return nil
 }
 
@@ -137,32 +189,4 @@ func createV1Message(entry *logrus.Entry, appName, hostname string) map[string]i
 
 	// return full message
 	return m
-}
-
-func newRedisConnectionPool(server, password string, port int, db int) *redis.Pool {
-	hostPort := fmt.Sprintf("%s:%d", server, port)
-	return &redis.Pool{
-		MaxIdle:     3,
-		IdleTimeout: 240 * time.Second,
-		Dial: func() (redis.Conn, error) {
-			c, err := redis.Dial("tcp", hostPort, redis.DialDatabase(db))
-			if err != nil {
-				return nil, err
-			}
-
-			// In case redis needs authentication
-			if password != "" {
-				if _, err := c.Do("AUTH", password); err != nil {
-					c.Close()
-					return nil, err
-				}
-			}
-
-			return c, err
-		},
-		TestOnBorrow: func(c redis.Conn, t time.Time) error {
-			_, err := c.Do("PING")
-			return err
-		},
-	}
 }

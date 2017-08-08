@@ -7,13 +7,13 @@ import (
 
 func TestNewHookFunc(t *testing.T) {
 	config := HookConfig{
-		Host:     "localhost",
-		Key:      "key",
-		Format:   "format",
-		App:      "appname",
-		Password: "password",
-		Port:     1,
-		DB:       1,
+		Addrs:      []string{"localhost:6379"},
+		ConnOption: SINGLE,
+		Key:        "key",
+		Format:     "format",
+		App:        "appname",
+		Password:   "password",
+		DB:         1,
 	}
 
 	hook, err := NewHook(config)
