@@ -125,7 +125,7 @@ func (hook *RedisHook) Fire(entry *logrus.Entry) error {
 		c := hook.RedisClient
 
 		// send message
-		_, err := c.LPush(hook.RedisKey, js).Result()
+		_, err := c.RPush(hook.RedisKey, js).Result()
 		if err != nil {
 			return fmt.Errorf("error sending message to REDIS: %s", err)
 		}
