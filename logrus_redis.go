@@ -68,39 +68,6 @@ func NewHook(config HookConfig) (*RedisHook, error) {
 	return hook, nil
 }
 
-func newSingleConnHook(config *HookConfig) (*redis.Client, error) {
-	c := redis.NewClient(&redis.Options{
-		Addr:        config.Addrs[0],
-		Password:    config.Password,
-		DB:          config.DB,
-		PoolSize:    3,
-		IdleTimeout: 240 * time.Second,
-	})
-
-	_, err := c.Ping().Result()
-	if err != nil {
-		return nil, fmt.Errorf("unable to connect to REDIS: %s", err)
-	}
-
-	return c, nil
-}
-
-func newClusterHook(config *HookConfig) (*redis.ClusterClient, error) {
-	cc := redis.NewClusterClient(&redis.ClusterOptions{
-		Addrs:       config.Addrs,
-		Password:    config.Password,
-		PoolSize:    3,
-		IdleTimeout: 240 * time.Second,
-	})
-
-	_, err := cc.Ping().Result()
-	if err != nil {
-		return nil, fmt.Errorf("unable to connect to REDIS Cluster: %s", err)
-	}
-
-	return cc, nil
-}
-
 // Fire is called when a log event is fired.
 func (hook *RedisHook) Fire(entry *logrus.Entry) error {
 	var msg interface{}
@@ -133,7 +100,7 @@ func (hook *RedisHook) Fire(entry *logrus.Entry) error {
 		cc := hook.RedisCluster
 
 		// send message
-		_, err := cc.LPush(hook.RedisKey, js).Result()
+		_, err := cc.RPush(hook.RedisKey, js).Result()
 		if err != nil {
 			return fmt.Errorf("error sending message to REDIS: %s", err)
 		}
@@ -152,6 +119,57 @@ func (hook *RedisHook) Levels() []logrus.Level {
 		logrus.FatalLevel,
 		logrus.PanicLevel,
 	}
+}
+
+func (hook *RedisHook) CloseConn() error {
+	var err error
+
+	if hook.RedisClient != nil {
+		err = hook.RedisClient.Close()
+	}
+
+	if hook.RedisCluster != nil {
+		err = hook.RedisCluster.Close()
+	}
+
+	if err != nil {
+		return fmt.Errorf("unable to disconnect to REDIS: %s", err)
+	}
+
+	return nil
+}
+
+func newSingleConnHook(config *HookConfig) (*redis.Client, error) {
+	c := redis.NewClient(&redis.Options{
+		Addr:        config.Addrs[0],
+		Password:    config.Password,
+		DB:          config.DB,
+		PoolSize:    3,
+		IdleTimeout: 240 * time.Second,
+	})
+
+	_, err := c.Ping().Result()
+	if err != nil {
+		return nil, fmt.Errorf("unable to connect to REDIS: %s", err)
+	}
+
+	return c, nil
+}
+
+func newClusterHook(config *HookConfig) (*redis.ClusterClient, error) {
+	cc := redis.NewClusterClient(&redis.ClusterOptions{
+		Addrs:       config.Addrs,
+		Password:    config.Password,
+		PoolSize:    3,
+		IdleTimeout: 240 * time.Second,
+	})
+
+	_, err := cc.Ping().Result()
+	if err != nil {
+		return nil, fmt.Errorf("unable to connect to REDIS Cluster: %s", err)
+	}
+
+	return cc, nil
 }
 
 func createV0Message(entry *logrus.Entry, appName, hostname string) map[string]interface{} {
